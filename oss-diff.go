@@ -287,7 +287,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Remote: %d files, %d different on remote\n", remoteFilesLength, remoteOnlyLen)
 	}
 	for i := range remoteOnly {
-		fmt.Fprintln(stderr, REMOTE+remoteOnly[i].Name)
+		if isLocalARegularFile {
+			fmt.Fprintln(stderr, filepath.Dir(REMOTE)+remoteOnly[i].Name)
+		} else {
+			fmt.Fprintln(stderr, REMOTE+remoteOnly[i].Name)
+		}
 	}
 
 	retCode := 4
