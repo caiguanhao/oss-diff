@@ -117,10 +117,10 @@ func walkFiles(root string) (files []File, err error) {
 			var etag string
 			if checkMD5 {
 				file, err := ioutil.ReadFile(path)
-				etag = fmt.Sprintf("\"%X\"", md5.Sum(file))
 				if err != nil {
 					return err
 				}
+				etag = fmt.Sprintf("\"%X\"", md5.Sum(file))
 			}
 			files = append(files, File{
 				Name: path[rootLen:],
