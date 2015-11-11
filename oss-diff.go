@@ -28,6 +28,7 @@ type List struct {
 	NextMarker  string
 	Files       []File `xml:"Contents"`
 }
+
 type File struct {
 	Name         string `xml:"Key"`
 	LastModified string
@@ -78,6 +79,9 @@ func getListWithMarker(prefix, marker string, files *[]File) (err error) {
 		return
 	}
 	prefixLen := len(prefix)
+	if isLocalARegularFile {
+		prefixLen = len(filepath.Dir(prefix))
+	}
 	for i, _ := range list.Files {
 		list.Files[i].Name = list.Files[i].Name[prefixLen:]
 	}
@@ -102,6 +106,9 @@ func walkFiles(root string) (files []File, err error) {
 		return
 	}
 	rootLen := len(root)
+	if isLocalARegularFile {
+		rootLen = len(filepath.Dir(root))
+	}
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -151,8 +158,14 @@ func diff(left, right []File) (ret []File) {
 	return
 }
 
+func printError(err ...interface{}) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(4)
+}
+
 var reverseStdoutStderr, checkMD5, lessVerbose bool
 var LOCAL, REMOTE string
+var isLocalARegularFile bool
 
 func init() {
 	flag.BoolVar(&reverseStdoutStderr, "r", false, "")
@@ -183,13 +196,11 @@ func main() {
 	timeStart := time.Now()
 
 	if len(flag.Args()) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: Please specify local and remote.")
-		os.Exit(4)
+		printError("Error: Please specify local and remote.")
 	}
 
 	if len(flag.Args()) > 2 {
-		fmt.Fprintln(os.Stderr, "Error: Please specify one local and remote.")
-		os.Exit(4)
+		printError("Error: Please specify one local and remote.")
 	}
 
 	LOCAL = filepath.Clean(flag.Arg(0))
@@ -205,6 +216,20 @@ func main() {
 	var localTimeUsed, remoteTimeUsed time.Duration
 	var err error
 
+	var root string
+	root, err = filepath.Abs(LOCAL)
+	if err != nil {
+		printError(err)
+	}
+
+	var info os.FileInfo
+	info, err = os.Stat(root)
+	if err != nil {
+		printError(err)
+	}
+
+	isLocalARegularFile = info.Mode().IsRegular()
+
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -212,8 +237,7 @@ func main() {
 		timeStart := time.Now()
 		localFiles, err = walkFiles(LOCAL)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(4)
+			printError(err)
 		}
 		localFilesLength = len(localFiles)
 		localTimeUsed = time.Since(timeStart)
@@ -224,8 +248,7 @@ func main() {
 		timeStart := time.Now()
 		remoteFiles, err = getList(REMOTE)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(4)
+			printError(err)
 		}
 		remoteFilesLength = len(remoteFiles)
 		remoteTimeUsed = time.Since(timeStart)
@@ -245,7 +268,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Local: %d files, %d different on local\n", localFilesLength, localOnlyLen)
 	}
 	for i := range localOnly {
-		fmt.Fprintln(stdout, LOCAL+localOnly[i].Name)
+		if isLocalARegularFile {
+			fmt.Fprintln(stdout, LOCAL)
+		} else {
+			fmt.Fprintln(stdout, LOCAL+localOnly[i].Name)
+		}
 	}
 
 	remoteOnly := diff(remoteFiles, localFiles)
