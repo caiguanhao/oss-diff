@@ -1,6 +1,8 @@
 oss-diff
 ========
 
+[![Circle CI](https://circleci.com/gh/caiguanhao/oss-diff.svg?style=svg)](https://circleci.com/gh/caiguanhao/oss-diff)
+
 ```
 oss-diff [OPTION] LOCAL-DIR  REMOTE-DIR
                   LOCAL-FILE REMOTE-FILE
