@@ -60,10 +60,10 @@ func request(method, remotePath, queryString string) (resp *http.Response, err e
 	return
 }
 
-func getListWithMarker(prefix, marker string, files *[]File) (err error) {
+func getListWithMarker(prefix string, marker *string, files *[]File) (err error) {
 	queryString := "?max-keys=1000&prefix=" + prefix
-	if marker != "" {
-		queryString += "&marker=" + marker
+	if marker != nil {
+		queryString += "&marker=" + *marker
 	}
 	resp, err := request("GET", "/", queryString)
 	if err != nil {
@@ -90,13 +90,13 @@ func getListWithMarker(prefix, marker string, files *[]File) (err error) {
 		fmt.Fprintf(os.Stderr, "Remote: received %d file names (out of %d) ...\n", len(list.Files), len(*files))
 	}
 	if list.IsTruncated {
-		getListWithMarker(prefix, list.NextMarker, files)
+		getListWithMarker(prefix, &list.NextMarker, files)
 	}
 	return
 }
 
 func getList(prefix string) (files []File, err error) {
-	err = getListWithMarker(prefix, "", &files)
+	err = getListWithMarker(prefix, nil, &files)
 	return
 }
 
