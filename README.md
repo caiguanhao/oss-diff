@@ -8,7 +8,7 @@ oss-diff [OPTION] LOCAL-DIR  REMOTE-DIR
 Options:
     -r, --reverse  Print LOCAL file paths to stderr, REMOTE to stdout
 
-    -m, --md5      Verify MD5 checksum
+    -m, --md5      Verify MD5 checksum besides file name and size
     -s, --shhh     Show only file path
 
 Status code: 0 - local and remote are identical

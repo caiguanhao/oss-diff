@@ -139,13 +139,15 @@ func diff(left, right []File) (ret []File) {
 		j, k := 0, 0
 		for j < rightLen {
 			if right[j].Name == left[i].Name &&
+				right[j].Size == left[i].Size &&
 				(!checkMD5 || right[j].ETag == left[i].ETag) {
 				break
 			}
 			j++
 		}
 		for k < retLen {
-			if ret[k].Name == left[i].Name {
+			if ret[k].Name == left[i].Name &&
+				ret[k].Size == left[i].Size {
 				break
 			}
 			k++
@@ -181,7 +183,7 @@ func init() {
 		fmt.Println("Options:")
 		fmt.Println("    -r, --reverse  Print LOCAL file paths to stderr, REMOTE to stdout")
 		fmt.Println()
-		fmt.Println("    -m, --md5      Verify MD5 checksum")
+		fmt.Println("    -m, --md5      Verify MD5 checksum besides file name and size")
 		fmt.Println("    -s, --shhh     Show only file path")
 		fmt.Println()
 		fmt.Println("Status code: 0 - local and remote are identical")
@@ -229,6 +231,10 @@ func main() {
 	}
 
 	isLocalARegularFile = info.Mode().IsRegular()
+
+	if checkMD5 && !lessVerbose {
+		fmt.Fprintln(os.Stderr, "MD5 checksum verification is on")
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(2)
