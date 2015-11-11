@@ -97,6 +97,10 @@ func getList(prefix string) (files []File, err error) {
 }
 
 func walkFiles(root string) (files []File, err error) {
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return
+	}
 	rootLen := len(root)
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -182,12 +186,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error: Please specify local and remote.")
 		os.Exit(4)
 	}
+
 	if len(flag.Args()) > 2 {
 		fmt.Fprintln(os.Stderr, "Error: Please specify one local and remote.")
 		os.Exit(4)
 	}
-	LOCAL = flag.Arg(0)
-	REMOTE = flag.Arg(1)
+
+	LOCAL = filepath.Clean(flag.Arg(0))
+	REMOTE = strings.Trim(filepath.Clean(flag.Arg(1)), "/")
 
 	API = DEFAULT_API_PREFIX
 	if strings.Count(API, "%s") == 1 {
