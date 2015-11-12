@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type File struct {
 	LastModified string
 	ETag         string
 	Size         int64
+	err          error
 }
 
 var API string
@@ -100,37 +102,67 @@ func getList(prefix string) (files []File, err error) {
 	return
 }
 
-func walkFiles(root string) (files []File, err error) {
-	root, err = filepath.Abs(root)
-	if err != nil {
-		return
-	}
-	rootLen := len(root)
-	if isLocalARegularFile {
-		rootLen = len(filepath.Dir(root))
-	}
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+func digester(doneChan <-chan struct{}, files <-chan File, c chan<- File) {
+	for file := range files {
+		data, err := ioutil.ReadFile(file.Name)
 		if err != nil {
-			return err
+			file.err = err
+		} else {
+			file.ETag = fmt.Sprintf("\"%X\"", md5.Sum(data))
 		}
-		if info.Mode().IsRegular() {
-			var etag string
-			if checkMD5 {
-				file, err := ioutil.ReadFile(path)
-				if err != nil {
-					return err
-				}
-				etag = fmt.Sprintf("\"%X\"", md5.Sum(file))
+		select {
+		case c <- file:
+		case <-doneChan:
+			return
+		}
+	}
+}
+
+func walkFiles(doneChan <-chan struct{}, root string) (<-chan File, <-chan error) {
+	filesChan := make(chan File)
+	errorsChan := make(chan error, 1)
+	go func() {
+		defer close(filesChan)
+		errorsChan <- filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
 			}
-			files = append(files, File{
-				Name: path[rootLen:],
-				Size: info.Size(),
-				ETag: etag,
-			})
+			if info.Mode().IsRegular() {
+				select {
+				case filesChan <- File{
+					Name: path,
+					Size: info.Size(),
+				}:
+				case <-doneChan:
+					return errors.New("walk canceled")
+				}
+			}
+			return nil
+		})
+	}()
+	return filesChan, errorsChan
+}
+
+func getLocalChans(root string) (chan struct{}, <-chan File, <-chan error) {
+	doneChan := make(chan struct{})
+	filesChan, errorsChan := walkFiles(doneChan, root)
+	if checkMD5 {
+		localFilesChan := make(chan File)
+		var MD5 sync.WaitGroup
+		MD5.Add(NUM_CPU)
+		for i := 0; i < NUM_CPU; i++ {
+			go func() {
+				digester(doneChan, filesChan, localFilesChan)
+				MD5.Done()
+			}()
 		}
-		return nil
-	})
-	return
+		go func() {
+			MD5.Wait()
+			close(localFilesChan)
+		}()
+		return doneChan, localFilesChan, errorsChan
+	}
+	return doneChan, filesChan, errorsChan
 }
 
 func diff(left, right []File) (ret []File) {
@@ -168,6 +200,7 @@ func printError(err ...interface{}) {
 var reverseStdoutStderr, checkMD5, lessVerbose bool
 var LOCAL, REMOTE string
 var isLocalARegularFile bool
+var NUM_CPU int = runtime.NumCPU()
 
 func init() {
 	flag.BoolVar(&reverseStdoutStderr, "r", false, "")
@@ -233,7 +266,7 @@ func main() {
 	isLocalARegularFile = info.Mode().IsRegular()
 
 	if checkMD5 && !lessVerbose {
-		fmt.Fprintln(os.Stderr, "MD5 checksum verification is on")
+		fmt.Fprintf(os.Stderr, "MD5 checksum verification using up to %d cores\n", NUM_CPU)
 	}
 
 	var wg sync.WaitGroup
@@ -241,10 +274,32 @@ func main() {
 
 	go func() {
 		timeStart := time.Now()
-		localFiles, err = walkFiles(LOCAL)
+
+		root, err = filepath.Abs(root)
 		if err != nil {
 			printError(err)
 		}
+
+		doneChan, localFilesChan, errorsChan := getLocalChans(root)
+		defer close(doneChan)
+
+		rootLen := len(root)
+		if isLocalARegularFile {
+			rootLen = len(filepath.Dir(root))
+		}
+
+		for localFile := range localFilesChan {
+			if localFile.err != nil {
+				printError(localFile.err)
+			}
+			localFile.Name = localFile.Name[rootLen:]
+			localFiles = append(localFiles, localFile)
+		}
+
+		if err := <-errorsChan; err != nil {
+			printError(err)
+		}
+
 		localFilesLength = len(localFiles)
 		localTimeUsed = time.Since(timeStart)
 		wg.Done()
@@ -311,7 +366,7 @@ func main() {
 	if !lessVerbose {
 		fmt.Fprintf(
 			os.Stderr,
-			"Time used:  %s local  %s remote  %s total\n",
+			"Time used: %s local, %s remote, %s total\n",
 			localTimeUsed.String(),
 			remoteTimeUsed.String(),
 			time.Since(timeStart).String(),
